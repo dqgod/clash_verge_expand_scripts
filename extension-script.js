@@ -68,6 +68,9 @@ function main(config, profileName) {
     // 已有分组名称（用于幂等性检查）
     const existingNames = new Set(proxyGroups.map(g => g.name));
 
+    // 收集新创建的地区组名（按地区顺序）
+    const newGroupNames = [];
+
     // 为每个地区创建 url-test 组
     for (const region of KNOWN_REGIONS) {
         const proxyNames = regionGroups[region];
@@ -76,7 +79,11 @@ function main(config, profileName) {
         const info = REGION_INFO[region];
         const groupName = `${info.flag} ${region}节点`;
 
-        if (existingNames.has(groupName)) continue;
+        if (existingNames.has(groupName)) {
+            // 幂等：已存在则只记录名称用于后续注入
+            newGroupNames.push(groupName);
+            continue;
+        }
 
         proxyGroups.push({
             name: groupName,
@@ -86,9 +93,27 @@ function main(config, profileName) {
             interval: 300,
             tolerance: 50,
         });
+        newGroupNames.push(groupName);
     }
 
     config['proxy-groups'] = proxyGroups;
+
+    // 将地区分组注入到 🚀 节点选择 的 proxies 列表中
+    // 插入在 ♻️ 自动选择 之后、DIRECT 之前
+    const nodeSelect = proxyGroups.find(g => g.name === '🚀 节点选择');
+    if (nodeSelect && nodeSelect.proxies) {
+        // 找到 ♻️ 自动选择 的位置，插入到其后
+        const autoIdx = nodeSelect.proxies.indexOf('♻️ 自动选择');
+        let insertIdx = autoIdx >= 0 ? autoIdx + 1 : 0;
+
+        for (const name of newGroupNames) {
+            if (!nodeSelect.proxies.includes(name)) {
+                nodeSelect.proxies.splice(insertIdx, 0, name);
+                insertIdx++;
+            }
+        }
+    }
+
     return config;
 }
 
