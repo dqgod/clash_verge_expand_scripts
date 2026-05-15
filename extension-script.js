@@ -4,11 +4,11 @@
 //   2. 按服务（PayPal/OpenAI/TikTok等）创建 select 类型代理组，并添加对应规则
 //
 // 用法：将此文件路径填入 Clash Verge → Settings → Extension Script
-// 更新域名数据：node update-domains.js
+// 更新备用域名缓存：node extension-script.js
 
 // ==================== 配置区 ====================
 
-// 是否走本地代理访问 GitHub（仅 update-domains.js 使用）
+// 是否走本地代理访问 GitHub（仅 Node 自更新备用缓存时使用）
 var USE_PROXY = true;
 // 本地代理地址
 var PROXY_URL = 'http://127.0.0.1:7897';
@@ -27,7 +27,8 @@ var SITE_CONFIG = [
 ];
 
 // ==================== 预拉取的域名缓存 ====================
-// 由 update-domains.js 自动生成，请勿手动编辑
+// 由 node extension-script.js 自动生成，请勿手动编辑。
+// Clash Verge 运行时使用 rule-providers 拉取规则，不依赖此缓存。
 
 var DOMAIN_CACHE = { "PayPal": { "icon": "💳", "rules": [{ "type": "DOMAIN-SUFFIX", "domain": "paypal.com" }, { "type": "DOMAIN-SUFFIX", "domain": "paypal.me" }, { "type": "DOMAIN-SUFFIX", "domain": "paypal-mktg.com" }, { "type": "DOMAIN-SUFFIX", "domain": "paypalobjects.com" }] }, "Anthropic": { "icon": "🤖", "rules": [{ "type": "DOMAIN-SUFFIX", "domain": "claude.ai" }, { "type": "DOMAIN-SUFFIX", "domain": "claude.com" }, { "type": "DOMAIN-SUFFIX", "domain": "anthropic.com" }] }, "OpenAI": { "icon": "🤖", "rules": [{ "type": "DOMAIN-SUFFIX", "domain": "chat.com" }, { "type": "DOMAIN-SUFFIX", "domain": "chatgpt.com" }, { "type": "DOMAIN-SUFFIX", "domain": "livekit.cloud" }, { "type": "DOMAIN-SUFFIX", "domain": "oaistatic.com" }, { "type": "DOMAIN-SUFFIX", "domain": "oaiusercontent.com" }, { "type": "DOMAIN-SUFFIX", "domain": "openai.com" }, { "type": "DOMAIN-SUFFIX", "domain": "sora.com" }, { "type": "DOMAIN", "domain": "api.statsig.com" }, { "type": "DOMAIN", "domain": "api-iam.intercom.io" }, { "type": "DOMAIN", "domain": "o33249.ingest.sentry.io" }, { "type": "DOMAIN", "domain": "openaiapi-site.azureedge.net" }] }, "TikTok": { "icon": "🎬", "rules": [{ "type": "DOMAIN-SUFFIX", "domain": "byteoversea.com" }, { "type": "DOMAIN-SUFFIX", "domain": "ibytedtos.com" }, { "type": "DOMAIN-SUFFIX", "domain": "muscdn.com" }, { "type": "DOMAIN-SUFFIX", "domain": "musical.ly" }, { "type": "DOMAIN-SUFFIX", "domain": "tiktok.com" }, { "type": "DOMAIN-SUFFIX", "domain": "tik-tokapi.com" }, { "type": "DOMAIN-SUFFIX", "domain": "tiktokcdn.com" }, { "type": "DOMAIN-SUFFIX", "domain": "tiktokcdn-eu.com" }, { "type": "DOMAIN-SUFFIX", "domain": "tiktokv.com" }, { "type": "DOMAIN-SUFFIX", "domain": "ttwstatic.com" }] }, "YouTube": { "icon": "🌐", "rules": [{ "type": "DOMAIN-SUFFIX", "domain": "googlevideo.com" }, { "type": "DOMAIN-SUFFIX", "domain": "withyoutube.com" }, { "type": "DOMAIN-SUFFIX", "domain": "youtu.be" }, { "type": "DOMAIN-SUFFIX", "domain": "youtube.com" }, { "type": "DOMAIN-SUFFIX", "domain": "youtubeeducation.com" }, { "type": "DOMAIN-SUFFIX", "domain": "youtubegaming.com" }, { "type": "DOMAIN-SUFFIX", "domain": "youtubekids.com" }, { "type": "DOMAIN-SUFFIX", "domain": "youtube-nocookie.com" }, { "type": "DOMAIN-SUFFIX", "domain": "yt.be" }, { "type": "DOMAIN-SUFFIX", "domain": "ytimg.com" }, { "type": "DOMAIN", "domain": "youtubei.googleapis.com" }, { "type": "DOMAIN", "domain": "yt3.ggpht.com" }] } };
 
@@ -79,12 +80,6 @@ function arrayIncludes(arr, val) {
     return false;
 }
 
-function dedupPush(arr, val) {
-    if (!arrayIncludes(arr, val)) {
-        arr.push(val);
-    }
-}
-
 // 统一 SITE_CONFIG 条目为 {url, name, icon} 格式
 // 支持传入 URL 字符串或 {url, name?, icon?} 对象
 function normalizeSiteConfig(site) {
@@ -125,19 +120,48 @@ function makeRuleProviderName(serviceName) {
     return 'site-' + (out || 'ruleset');
 }
 
-// ==================== 主函数 ====================
+function makeRuleProvider(site, providerName) {
+    return {
+        type: 'http',
+        behavior: 'classical',
+        format: 'text',
+        url: site.url,
+        path: './ruleset/' + providerName + '.txt',
+        interval: 86400,
+    };
+}
 
-function main(config, profileName) {
-    var proxies = config.proxies;
-    if (!proxies || !Array.isArray(proxies) || proxies.length === 0) {
-        return config;
+function makeServiceGroupName(site) {
+    return site.icon + ' ' + site.name;
+}
+
+function makeRuleSetRule(providerName, serviceGroupName) {
+    return 'RULE-SET,' + providerName + ',' + serviceGroupName;
+}
+
+function getRuleKey(rule) {
+    if (typeof rule === 'string') return rule;
+    if (rule && rule.length) return rule.join(',');
+    return '';
+}
+
+function buildExistingGroupNameMap(proxyGroups) {
+    var existingNames = {};
+    for (var i = 0; i < proxyGroups.length; i++) {
+        existingNames[proxyGroups[i].name] = true;
     }
+    return existingNames;
+}
 
-    var proxyGroups = config['proxy-groups'] || [];
-    var rules = config.rules || [];
+function buildExistingRuleMap(rules) {
+    var existingRules = {};
+    for (var i = 0; i < rules.length; i++) {
+        existingRules[getRuleKey(rules[i])] = true;
+    }
+    return existingRules;
+}
 
-    // ========== 第一部分：地区分组 ==========
-
+function buildRegionGroups(proxies) {
     var regionGroups = {};
     for (var i = 0; i < KNOWN_REGIONS.length; i++) {
         regionGroups[KNOWN_REGIONS[i]] = [];
@@ -153,13 +177,11 @@ function main(config, profileName) {
         regionGroups[region].push(name);
     }
 
-    // 收集已有分组名
-    var existingNames = {};
-    for (var i = 0; i < proxyGroups.length; i++) {
-        existingNames[proxyGroups[i].name] = true;
-    }
+    return regionGroups;
+}
 
-    var newRegionGroupNames = [];
+function ensureRegionProxyGroups(proxyGroups, existingNames, regionGroups) {
+    var regionGroupNames = [];
 
     for (var i = 0; i < KNOWN_REGIONS.length; i++) {
         var region = KNOWN_REGIONS[i];
@@ -170,7 +192,7 @@ function main(config, profileName) {
         var groupName = info.flag + ' ' + region + '节点';
 
         if (existingNames[groupName]) {
-            newRegionGroupNames.push(groupName);
+            regionGroupNames.push(groupName);
             continue;
         }
 
@@ -183,39 +205,38 @@ function main(config, profileName) {
             tolerance: 50,
         });
         existingNames[groupName] = true;
-        newRegionGroupNames.push(groupName);
+        regionGroupNames.push(groupName);
     }
 
-    // ========== 第二部分：收集上游组引用 ==========
+    return regionGroupNames;
+}
 
+function buildUpstreamGroupNames(regionGroupNames) {
     var upstreamGroupNames = ['🚀 节点选择', '♻️ 自动选择'];
-    for (var i = 0; i < newRegionGroupNames.length; i++) {
-        upstreamGroupNames.push(newRegionGroupNames[i]);
+    for (var i = 0; i < regionGroupNames.length; i++) {
+        upstreamGroupNames.push(regionGroupNames[i]);
     }
     upstreamGroupNames.push('🎯 全球直连');
 
-    // ========== 第三部分：服务代理组 + 规则 ==========
+    return upstreamGroupNames;
+}
 
-    var ruleProviders = config['rule-providers'] || {};
-
-    // 收集已有规则
-    var existingRules = {};
-    for (var i = 0; i < rules.length; i++) {
-        var r = rules[i];
-        var key = typeof r === 'string' ? r : (r.length ? r.join(',') : '');
-        existingRules[key] = true;
+function prependRules(rules, newRules) {
+    for (var i = newRules.length - 1; i >= 0; i--) {
+        rules.unshift(newRules[i]);
     }
+}
 
+function ensureServiceRuleProviders(config, proxyGroups, rules, existingNames, existingRules, upstreamGroupNames) {
     // 以 SITE_CONFIG 为基准生成 rule-providers，由 Clash/Mihomo 内核拉取远程规则。
     // DOMAIN_CACHE 仅保留给 node extension-script.js 自更新备用，不再影响扩展脚本运行。
+    var ruleProviders = config['rule-providers'] || {};
     var newRules = [];
 
     for (var si = 0; si < SITE_CONFIG.length; si++) {
         var site = normalizeSiteConfig(SITE_CONFIG[si]);
-        var serviceName = site.name;
-        var icon = site.icon;
-        var serviceGroupName = icon + ' ' + serviceName;
-        var providerName = makeRuleProviderName(serviceName);
+        var serviceGroupName = makeServiceGroupName(site);
+        var providerName = makeRuleProviderName(site.name);
 
         // 创建服务代理组
         if (!existingNames[serviceGroupName]) {
@@ -228,16 +249,9 @@ function main(config, profileName) {
         }
 
         // 创建/更新远程规则集。classical + text 可直接使用 Surge/Clash 规则文本。
-        ruleProviders[providerName] = {
-            type: 'http',
-            behavior: 'classical',
-            format: 'text',
-            url: site.url,
-            path: './ruleset/' + providerName + '.txt',
-            interval: 86400,
-        };
+        ruleProviders[providerName] = makeRuleProvider(site, providerName);
 
-        var ruleStr = 'RULE-SET,' + providerName + ',' + serviceGroupName;
+        var ruleStr = makeRuleSetRule(providerName, serviceGroupName);
         if (!existingRules[ruleStr]) {
             newRules.push(ruleStr);
             existingRules[ruleStr] = true;
@@ -246,21 +260,15 @@ function main(config, profileName) {
 
     // 新规则插入到规则列表最前面，确保优先匹配
     if (newRules.length > 0) {
-        // reverse 保证服务配置顺序不变（PayPal 规则仍在 Anthropic 之前）
-        newRules.reverse();
-        for (var i = 0; i < newRules.length; i++) {
-            rules.unshift(newRules[i]);
-        }
+        prependRules(rules, newRules);
     }
 
-    config['proxy-groups'] = proxyGroups;
     config['rule-providers'] = ruleProviders;
-    config.rules = rules;
+}
 
-    // ========== 第四部分：注入地区组到 🚀 节点选择 ==========
+function injectRegionGroupsIntoNodeSelect(proxyGroups, regionGroupNames) {
     // 注意：不注入服务组（PayPal等），否则会产生循环依赖
     // 服务组 ↘ 节点选择 ↘ 服务组 = 环
-
     var nodeSelect = null;
     for (var i = 0; i < proxyGroups.length; i++) {
         if (proxyGroups[i].name === '🚀 节点选择') {
@@ -279,16 +287,79 @@ function main(config, profileName) {
         }
         var insertIdx = autoIdx >= 0 ? autoIdx + 1 : 0;
 
-        for (var i = 0; i < newRegionGroupNames.length; i++) {
-            var gn = newRegionGroupNames[i];
+        for (var i = 0; i < regionGroupNames.length; i++) {
+            var gn = regionGroupNames[i];
             if (!arrayIncludes(nodeSelect.proxies, gn)) {
                 nodeSelect.proxies.splice(insertIdx, 0, gn);
                 insertIdx++;
             }
         }
     }
+}
+
+// ==================== 主函数 ====================
+
+function main(config, profileName) {
+    var proxies = config.proxies;
+    if (!proxies || !Array.isArray(proxies) || proxies.length === 0) {
+        return config;
+    }
+
+    var proxyGroups = config['proxy-groups'] || [];
+    var rules = config.rules || [];
+    var existingNames = buildExistingGroupNameMap(proxyGroups);
+    var existingRules = buildExistingRuleMap(rules);
+
+    var regionGroups = buildRegionGroups(proxies);
+    var regionGroupNames = ensureRegionProxyGroups(proxyGroups, existingNames, regionGroups);
+    var upstreamGroupNames = buildUpstreamGroupNames(regionGroupNames);
+
+    ensureServiceRuleProviders(config, proxyGroups, rules, existingNames, existingRules, upstreamGroupNames);
+    injectRegionGroupsIntoNodeSelect(proxyGroups, regionGroupNames);
+
+    config['proxy-groups'] = proxyGroups;
+    config.rules = rules;
 
     return config;
+}
+
+// ==================== Node 自更新辅助函数 ====================
+
+function parseSurgeRules(text) {
+    var rules = [];
+    var lines = text.split('\n');
+
+    for (var i = 0; i < lines.length; i++) {
+        var t = lines[i].trim();
+        if (!t || t.indexOf('#') === 0 || t.indexOf('USER-AGENT') === 0) continue;
+        if (t.indexOf('DOMAIN-KEYWORD') === 0) continue;
+
+        if (t.indexOf('DOMAIN-SUFFIX,') === 0) {
+            var suffixDomain = t.slice('DOMAIN-SUFFIX,'.length).trim();
+            if (suffixDomain) rules.push({ type: 'DOMAIN-SUFFIX', domain: suffixDomain });
+        } else if (t.indexOf('DOMAIN,') === 0) {
+            var domain = t.slice('DOMAIN,'.length).trim();
+            if (domain) rules.push({ type: 'DOMAIN', domain: domain });
+        }
+    }
+
+    return rules;
+}
+
+function readProxyUrl(fs, path) {
+    if (!USE_PROXY) return '';
+
+    var proxyUrl = PROXY_URL;
+    var proxyConfPath = process.env.HOME || process.env.USERPROFILE;
+    proxyConfPath = path.join(proxyConfPath, 'scripts', 'proxy', 'proxy.conf');
+
+    try {
+        var confText = fs.readFileSync(proxyConfPath, 'utf8');
+        var match = confText.match(/PROXY_SERVER=(http:\/\/[^\s]+)/);
+        if (match) proxyUrl = match[1];
+    } catch (e) { }
+
+    return proxyUrl;
 }
 
 // ==================== 导出 ====================
@@ -305,29 +376,23 @@ if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.m
     var fs = require('fs');
     var path = require('path');
 
-    // 读取代理配置
-    var proxyConfPath = process.env.HOME || process.env.USERPROFILE;
-    proxyConfPath = path.join(proxyConfPath, 'scripts', 'proxy', 'proxy.conf');
-    var proxyUrl = 'http://127.0.0.1:7897';
-    try {
-        var confText = fs.readFileSync(proxyConfPath, 'utf8');
-        var match = confText.match(/PROXY_SERVER=(http:\/\/[^\s]+)/);
-        if (match) proxyUrl = match[1];
-    } catch (_) { }
+    var proxyUrl = readProxyUrl(fs, path);
+    var agent = null;
 
-    var ProxyAgent;
-    try {
-        ProxyAgent = require('undici').ProxyAgent;
-    } catch (_) {
-        console.log('正在安装 undici...');
-        require('child_process').execSync('npm install undici', { cwd: __dirname, stdio: 'inherit' });
-        ProxyAgent = require('undici').ProxyAgent;
+    if (proxyUrl) {
+        var ProxyAgent;
+        try {
+            ProxyAgent = require('undici').ProxyAgent;
+        } catch (e) {
+            console.log('正在安装 undici...');
+            require('child_process').execSync('npm install undici', { cwd: __dirname, stdio: 'inherit' });
+            ProxyAgent = require('undici').ProxyAgent;
+        }
+        agent = new ProxyAgent(proxyUrl);
     }
 
-    var agent = new ProxyAgent(proxyUrl);
-
     console.log('=== 开始拉取域名数据 ===');
-    console.log('代理: ' + proxyUrl);
+    console.log('代理: ' + (proxyUrl || '未启用'));
     console.log('');
 
     var DOMAIN_CACHE = {};
@@ -337,22 +402,10 @@ if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.m
         for (var i = 0; i < SITE_CONFIG.length; i++) {
             var site = normalizeSiteConfig(SITE_CONFIG[i]);
             try {
-                var resp = await fetch(site.url, { dispatcher: agent });
+                var fetchOptions = agent ? { dispatcher: agent } : {};
+                var resp = await fetch(site.url, fetchOptions);
                 var text = await resp.text();
-                var rules = [];
-                var lines = text.split('\n');
-                for (var j = 0; j < lines.length; j++) {
-                    var t = lines[j].trim();
-                    if (!t || t.indexOf('#') === 0 || t.indexOf('USER-AGENT') === 0) continue;
-                    if (t.indexOf('DOMAIN-KEYWORD') === 0) continue;
-                    if (t.indexOf('DOMAIN-SUFFIX,') === 0) {
-                        var d = t.slice('DOMAIN-SUFFIX,'.length).trim();
-                        if (d) rules.push({ type: 'DOMAIN-SUFFIX', domain: d });
-                    } else if (t.indexOf('DOMAIN,') === 0) {
-                        var d = t.slice('DOMAIN,'.length).trim();
-                        if (d) rules.push({ type: 'DOMAIN', domain: d });
-                    }
-                }
+                var rules = parseSurgeRules(text);
                 DOMAIN_CACHE[site.name] = { icon: site.icon, rules: rules };
                 totalDomains += rules.length;
                 console.log('✓ ' + site.name + ': ' + rules.length + ' 个域名');
