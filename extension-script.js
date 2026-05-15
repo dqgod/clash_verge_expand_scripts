@@ -24,7 +24,6 @@ var SITE_CONFIG = [
     { url: 'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/GenAI/OpenAI.list', icon: '🤖' },
     { url: 'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/Streaming/Video/TikTok.list', icon: '🎬' },
     'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/Streaming/Video/YouTube.list',
-    // 'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/Streaming/Video/Pornhub.list',
 ];
 
 // ==================== 预拉取的域名缓存 ====================
