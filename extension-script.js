@@ -13,30 +13,36 @@ var USE_PROXY = true;
 // 本地代理地址
 var PROXY_URL = 'http://127.0.0.1:7897';
 
-// 服务规则集配置（update-domains.js 会读取此配置拉取域名）
+// 服务规则集配置
+// 支持两种格式：
+//   1. 仅 URL 字符串 → 自动从文件名提取名称，默认图标 🌐
+//   2. {url, icon} 对象 → 可覆盖图标（name 仍自动提取）
+// 新增服务只需添加一行 URL 即可，无需手动指定 name/icon
 var SITE_CONFIG = [
-    { url: 'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/PayPal.list', name: 'PayPal', icon: '💳' },
-    { url: 'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/GenAI/Anthropic.list', name: 'Anthropic', icon: '🤖' },
-    { url: 'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/GenAI/OpenAI.list', name: 'OpenAI', icon: '🤖' },
-    { url: 'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/Streaming/Video/TikTok.list', name: 'TikTok', icon: '🎬' },
+    { url: 'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/PayPal.list', icon: '💳' },
+    { url: 'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/GenAI/Anthropic.list', icon: '🤖' },
+    { url: 'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/GenAI/OpenAI.list', icon: '🤖' },
+    { url: 'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/Streaming/Video/TikTok.list', icon: '🎬' },
+    'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/Streaming/Video/YouTube.list',
+    // 'https://raw.githubusercontent.com/ConnersHua/RuleGo/refs/heads/master/Surge/Ruleset/Extra/Streaming/Video/Pornhub.list',
 ];
 
 // ==================== 预拉取的域名缓存 ====================
 // 由 update-domains.js 自动生成，请勿手动编辑
 
-var DOMAIN_CACHE = {"PayPal":{"icon":"💳","rules":[{"type":"DOMAIN-SUFFIX","domain":"paypal.com"},{"type":"DOMAIN-SUFFIX","domain":"paypal.me"},{"type":"DOMAIN-SUFFIX","domain":"paypal-mktg.com"},{"type":"DOMAIN-SUFFIX","domain":"paypalobjects.com"}]},"Anthropic":{"icon":"🤖","rules":[{"type":"DOMAIN-SUFFIX","domain":"claude.ai"},{"type":"DOMAIN-SUFFIX","domain":"claude.com"},{"type":"DOMAIN-SUFFIX","domain":"anthropic.com"}]},"OpenAI":{"icon":"🤖","rules":[{"type":"DOMAIN-SUFFIX","domain":"chat.com"},{"type":"DOMAIN-SUFFIX","domain":"chatgpt.com"},{"type":"DOMAIN-SUFFIX","domain":"livekit.cloud"},{"type":"DOMAIN-SUFFIX","domain":"oaistatic.com"},{"type":"DOMAIN-SUFFIX","domain":"oaiusercontent.com"},{"type":"DOMAIN-SUFFIX","domain":"openai.com"},{"type":"DOMAIN-SUFFIX","domain":"sora.com"},{"type":"DOMAIN","domain":"api.statsig.com"},{"type":"DOMAIN","domain":"api-iam.intercom.io"},{"type":"DOMAIN","domain":"o33249.ingest.sentry.io"},{"type":"DOMAIN","domain":"openaiapi-site.azureedge.net"}]},"TikTok":{"icon":"🎬","rules":[{"type":"DOMAIN-SUFFIX","domain":"byteoversea.com"},{"type":"DOMAIN-SUFFIX","domain":"ibytedtos.com"},{"type":"DOMAIN-SUFFIX","domain":"muscdn.com"},{"type":"DOMAIN-SUFFIX","domain":"musical.ly"},{"type":"DOMAIN-SUFFIX","domain":"tiktok.com"},{"type":"DOMAIN-SUFFIX","domain":"tik-tokapi.com"},{"type":"DOMAIN-SUFFIX","domain":"tiktokcdn.com"},{"type":"DOMAIN-SUFFIX","domain":"tiktokcdn-eu.com"},{"type":"DOMAIN-SUFFIX","domain":"tiktokv.com"},{"type":"DOMAIN-SUFFIX","domain":"ttwstatic.com"}]}};
+var DOMAIN_CACHE = { "PayPal": { "icon": "💳", "rules": [{ "type": "DOMAIN-SUFFIX", "domain": "paypal.com" }, { "type": "DOMAIN-SUFFIX", "domain": "paypal.me" }, { "type": "DOMAIN-SUFFIX", "domain": "paypal-mktg.com" }, { "type": "DOMAIN-SUFFIX", "domain": "paypalobjects.com" }] }, "Anthropic": { "icon": "🤖", "rules": [{ "type": "DOMAIN-SUFFIX", "domain": "claude.ai" }, { "type": "DOMAIN-SUFFIX", "domain": "claude.com" }, { "type": "DOMAIN-SUFFIX", "domain": "anthropic.com" }] }, "OpenAI": { "icon": "🤖", "rules": [{ "type": "DOMAIN-SUFFIX", "domain": "chat.com" }, { "type": "DOMAIN-SUFFIX", "domain": "chatgpt.com" }, { "type": "DOMAIN-SUFFIX", "domain": "livekit.cloud" }, { "type": "DOMAIN-SUFFIX", "domain": "oaistatic.com" }, { "type": "DOMAIN-SUFFIX", "domain": "oaiusercontent.com" }, { "type": "DOMAIN-SUFFIX", "domain": "openai.com" }, { "type": "DOMAIN-SUFFIX", "domain": "sora.com" }, { "type": "DOMAIN", "domain": "api.statsig.com" }, { "type": "DOMAIN", "domain": "api-iam.intercom.io" }, { "type": "DOMAIN", "domain": "o33249.ingest.sentry.io" }, { "type": "DOMAIN", "domain": "openaiapi-site.azureedge.net" }] }, "TikTok": { "icon": "🎬", "rules": [{ "type": "DOMAIN-SUFFIX", "domain": "byteoversea.com" }, { "type": "DOMAIN-SUFFIX", "domain": "ibytedtos.com" }, { "type": "DOMAIN-SUFFIX", "domain": "muscdn.com" }, { "type": "DOMAIN-SUFFIX", "domain": "musical.ly" }, { "type": "DOMAIN-SUFFIX", "domain": "tiktok.com" }, { "type": "DOMAIN-SUFFIX", "domain": "tik-tokapi.com" }, { "type": "DOMAIN-SUFFIX", "domain": "tiktokcdn.com" }, { "type": "DOMAIN-SUFFIX", "domain": "tiktokcdn-eu.com" }, { "type": "DOMAIN-SUFFIX", "domain": "tiktokv.com" }, { "type": "DOMAIN-SUFFIX", "domain": "ttwstatic.com" }] }, "YouTube": { "icon": "🌐", "rules": [{ "type": "DOMAIN-SUFFIX", "domain": "googlevideo.com" }, { "type": "DOMAIN-SUFFIX", "domain": "withyoutube.com" }, { "type": "DOMAIN-SUFFIX", "domain": "youtu.be" }, { "type": "DOMAIN-SUFFIX", "domain": "youtube.com" }, { "type": "DOMAIN-SUFFIX", "domain": "youtubeeducation.com" }, { "type": "DOMAIN-SUFFIX", "domain": "youtubegaming.com" }, { "type": "DOMAIN-SUFFIX", "domain": "youtubekids.com" }, { "type": "DOMAIN-SUFFIX", "domain": "youtube-nocookie.com" }, { "type": "DOMAIN-SUFFIX", "domain": "yt.be" }, { "type": "DOMAIN-SUFFIX", "domain": "ytimg.com" }, { "type": "DOMAIN", "domain": "youtubei.googleapis.com" }, { "type": "DOMAIN", "domain": "yt3.ggpht.com" }] } };
 
 // ==================== 地区检测 ====================
 
 var REGION_INFO = {
-    '台湾':   { flag: '🇹🇼' },
-    '香港':   { flag: '🇭🇰' },
-    '日本':   { flag: '🇯🇵' },
+    '台湾': { flag: '🇹🇼' },
+    '香港': { flag: '🇭🇰' },
+    '日本': { flag: '🇯🇵' },
     '新加坡': { flag: '🇸🇬' },
-    '美国':   { flag: '🇺🇸' },
-    '德国':   { flag: '🇩🇪' },
-    '英国':   { flag: '🇬🇧' },
-    '韩国':   { flag: '🇰🇷' },
+    '美国': { flag: '🇺🇸' },
+    '德国': { flag: '🇩🇪' },
+    '英国': { flag: '🇬🇧' },
+    '韩国': { flag: '🇰🇷' },
 };
 
 var KNOWN_REGIONS = ['台湾', '香港', '日本', '新加坡', '美国', '德国', '英国', '韩国'];
@@ -78,6 +84,46 @@ function dedupPush(arr, val) {
     if (!arrayIncludes(arr, val)) {
         arr.push(val);
     }
+}
+
+// 统一 SITE_CONFIG 条目为 {url, name, icon} 格式
+// 支持传入 URL 字符串或 {url, name?, icon?} 对象
+function normalizeSiteConfig(site) {
+    if (typeof site === 'string') {
+        var name = site.split('/').pop().replace('.list', '');
+        return { url: site, name: name, icon: '\u{1F310}' }; // 🌐
+    }
+    return {
+        url: site.url,
+        name: site.name || site.url.split('/').pop().replace('.list', ''),
+        icon: site.icon || '\u{1F310}',
+    };
+}
+
+function makeRuleProviderName(serviceName) {
+    var raw = String(serviceName || '').toLowerCase();
+    var out = '';
+    var lastDash = false;
+
+    for (var i = 0; i < raw.length; i++) {
+        var code = raw.charCodeAt(i);
+        var isNumber = code >= 48 && code <= 57;
+        var isLower = code >= 97 && code <= 122;
+
+        if (isNumber || isLower) {
+            out += raw.charAt(i);
+            lastDash = false;
+        } else if (!lastDash && out.length > 0) {
+            out += '-';
+            lastDash = true;
+        }
+    }
+
+    if (out.charAt(out.length - 1) === '-') {
+        out = out.slice(0, out.length - 1);
+    }
+
+    return 'site-' + (out || 'ruleset');
 }
 
 // ==================== 主函数 ====================
@@ -151,6 +197,8 @@ function main(config, profileName) {
 
     // ========== 第三部分：服务代理组 + 规则 ==========
 
+    var ruleProviders = config['rule-providers'] || {};
+
     // 收集已有规则
     var existingRules = {};
     for (var i = 0; i < rules.length; i++) {
@@ -159,19 +207,16 @@ function main(config, profileName) {
         existingRules[key] = true;
     }
 
-    var serviceNames = Object.keys(DOMAIN_CACHE);
-    // 先收集所有新规则，再统一插入到规则列表最前面（保证优先级最高）
+    // 以 SITE_CONFIG 为基准生成 rule-providers，由 Clash/Mihomo 内核拉取远程规则。
+    // DOMAIN_CACHE 仅保留给 node extension-script.js 自更新备用，不再影响扩展脚本运行。
     var newRules = [];
 
-    for (var si = 0; si < serviceNames.length; si++) {
-        var serviceName = serviceNames[si];
-        var siteData = DOMAIN_CACHE[serviceName];
-        var domainRules = siteData.rules;
-        var icon = siteData.icon;
-
-        if (!domainRules || domainRules.length === 0) continue;
-
+    for (var si = 0; si < SITE_CONFIG.length; si++) {
+        var site = normalizeSiteConfig(SITE_CONFIG[si]);
+        var serviceName = site.name;
+        var icon = site.icon;
         var serviceGroupName = icon + ' ' + serviceName;
+        var providerName = makeRuleProviderName(serviceName);
 
         // 创建服务代理组
         if (!existingNames[serviceGroupName]) {
@@ -183,14 +228,20 @@ function main(config, profileName) {
             existingNames[serviceGroupName] = true;
         }
 
-        // 收集新规则
-        for (var ri = 0; ri < domainRules.length; ri++) {
-            var dr = domainRules[ri];
-            var ruleStr = dr.type + ',' + dr.domain + ',' + serviceGroupName;
-            if (!existingRules[ruleStr]) {
-                newRules.push(ruleStr);
-                existingRules[ruleStr] = true;
-            }
+        // 创建/更新远程规则集。classical + text 可直接使用 Surge/Clash 规则文本。
+        ruleProviders[providerName] = {
+            type: 'http',
+            behavior: 'classical',
+            format: 'text',
+            url: site.url,
+            path: './ruleset/' + providerName + '.txt',
+            interval: 86400,
+        };
+
+        var ruleStr = 'RULE-SET,' + providerName + ',' + serviceGroupName;
+        if (!existingRules[ruleStr]) {
+            newRules.push(ruleStr);
+            existingRules[ruleStr] = true;
         }
     }
 
@@ -204,6 +255,7 @@ function main(config, profileName) {
     }
 
     config['proxy-groups'] = proxyGroups;
+    config['rule-providers'] = ruleProviders;
     config.rules = rules;
 
     // ========== 第四部分：注入地区组到 🚀 节点选择 ==========
@@ -262,7 +314,7 @@ if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.m
         var confText = fs.readFileSync(proxyConfPath, 'utf8');
         var match = confText.match(/PROXY_SERVER=(http:\/\/[^\s]+)/);
         if (match) proxyUrl = match[1];
-    } catch (_) {}
+    } catch (_) { }
 
     var ProxyAgent;
     try {
@@ -282,9 +334,9 @@ if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.m
     var DOMAIN_CACHE = {};
     var totalDomains = 0;
 
-    (async function() {
+    (async function () {
         for (var i = 0; i < SITE_CONFIG.length; i++) {
-            var site = SITE_CONFIG[i];
+            var site = normalizeSiteConfig(SITE_CONFIG[i]);
             try {
                 var resp = await fetch(site.url, { dispatcher: agent });
                 var text = await resp.text();
@@ -329,7 +381,7 @@ if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.m
         }
         console.log('总计: ' + totalDomains + ' 个域名, ' + Object.keys(DOMAIN_CACHE).length + ' 个服务');
         console.log('=== 完成 ===');
-    })().catch(function(e) {
+    })().catch(function (e) {
         console.error('更新失败: ' + e.message);
         process.exit(1);
     });
