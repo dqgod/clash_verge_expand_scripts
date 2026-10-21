@@ -2,6 +2,7 @@
 // 功能：
 //   1. 按代理目标地区自动创建 url-test 类型的代理组
 //   2. 按服务（PayPal/OpenAI/TikTok等）创建 select 类型代理组，并添加对应规则
+//   3. 缺少“♻️ 自动选择”时自动补建，并添加到“🚀 节点选择”候选列表
 //
 // 用法：将此文件路径填入 Clash Verge → Settings → Extension Script
 // 更新备用域名缓存：node extension-script.js
@@ -12,6 +13,10 @@
 var USE_PROXY = true;
 // 本地代理地址
 var PROXY_URL = 'http://127.0.0.1:7897';
+
+// 新建自动选择和地区测速组时使用的参数（已有组保留原配置）
+var URL_TEST_INTERVAL = 300; // 测速间隔，单位：秒
+var URL_TEST_TOLERANCE = 50; // 延迟容差，单位：毫秒
 
 // 服务规则集配置
 // 支持两种格式：
@@ -180,6 +185,46 @@ function buildRegionGroups(proxies) {
     return regionGroups;
 }
 
+function ensureAutoSelectProxyGroup(proxyGroups, existingNames, proxies) {
+    var groupName = '♻️ 自动选择';
+    if (existingNames[groupName]) return;
+
+    var proxyNames = [];
+    for (var i = 0; i < proxies.length; i++) {
+        var name = proxies[i].name;
+        if (typeof name !== 'string' || !name || arrayIncludes(proxyNames, name)) continue;
+        proxyNames.push(name);
+    }
+
+    if (proxyNames.length === 0) return;
+
+    proxyGroups.push({
+        name: groupName,
+        type: 'url-test',
+        proxies: proxyNames,
+        url: 'http://www.gstatic.com/generate_204',
+        interval: URL_TEST_INTERVAL,
+        tolerance: URL_TEST_TOLERANCE,
+    });
+    existingNames[groupName] = true;
+}
+
+function moveAutoSelectAfterNodeSelect(proxyGroups) {
+    var nodeIdx = -1;
+    var autoIdx = -1;
+    for (var i = 0; i < proxyGroups.length; i++) {
+        if (proxyGroups[i].name === '🚀 节点选择') nodeIdx = i;
+        if (proxyGroups[i].name === '♻️ 自动选择') autoIdx = i;
+    }
+
+    if (nodeIdx < 0 || autoIdx < 0 || autoIdx === nodeIdx + 1) return;
+
+    // 仅调整代理组展示顺序，保留组配置和其他组的相对顺序。
+    var autoGroup = proxyGroups.splice(autoIdx, 1)[0];
+    if (autoIdx < nodeIdx) nodeIdx--;
+    proxyGroups.splice(nodeIdx + 1, 0, autoGroup);
+}
+
 function ensureRegionProxyGroups(proxyGroups, existingNames, regionGroups) {
     var regionGroupNames = [];
 
@@ -201,8 +246,8 @@ function ensureRegionProxyGroups(proxyGroups, existingNames, regionGroups) {
             type: 'url-test',
             proxies: proxyNames,
             url: 'http://www.gstatic.com/generate_204',
-            interval: 300,
-            tolerance: 50,
+            interval: URL_TEST_INTERVAL,
+            tolerance: URL_TEST_TOLERANCE,
         });
         existingNames[groupName] = true;
         regionGroupNames.push(groupName);
@@ -266,7 +311,7 @@ function ensureServiceRuleProviders(config, proxyGroups, rules, existingNames, e
     config['rule-providers'] = ruleProviders;
 }
 
-function injectRegionGroupsIntoNodeSelect(proxyGroups, regionGroupNames) {
+function injectRegionGroupsIntoNodeSelect(proxyGroups, regionGroupNames, existingNames) {
     // 注意：不注入服务组（PayPal等），否则会产生循环依赖
     // 服务组 ↘ 节点选择 ↘ 服务组 = 环
     var nodeSelect = null;
@@ -278,6 +323,10 @@ function injectRegionGroupsIntoNodeSelect(proxyGroups, regionGroupNames) {
     }
 
     if (nodeSelect && nodeSelect.proxies) {
+        if (existingNames['♻️ 自动选择'] && !arrayIncludes(nodeSelect.proxies, '♻️ 自动选择')) {
+            nodeSelect.proxies.unshift('♻️ 自动选择');
+        }
+
         var autoIdx = -1;
         for (var i = 0; i < nodeSelect.proxies.length; i++) {
             if (nodeSelect.proxies[i] === '♻️ 自动选择') {
@@ -310,12 +359,14 @@ function main(config, profileName) {
     var existingNames = buildExistingGroupNameMap(proxyGroups);
     var existingRules = buildExistingRuleMap(rules);
 
+    ensureAutoSelectProxyGroup(proxyGroups, existingNames, proxies);
+    moveAutoSelectAfterNodeSelect(proxyGroups);
     var regionGroups = buildRegionGroups(proxies);
     var regionGroupNames = ensureRegionProxyGroups(proxyGroups, existingNames, regionGroups);
     var upstreamGroupNames = buildUpstreamGroupNames(regionGroupNames);
 
     ensureServiceRuleProviders(config, proxyGroups, rules, existingNames, existingRules, upstreamGroupNames);
-    injectRegionGroupsIntoNodeSelect(proxyGroups, regionGroupNames);
+    injectRegionGroupsIntoNodeSelect(proxyGroups, regionGroupNames, existingNames);
 
     config['proxy-groups'] = proxyGroups;
     config.rules = rules;
