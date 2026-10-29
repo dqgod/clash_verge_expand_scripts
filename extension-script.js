@@ -1,8 +1,9 @@
 // Clash Verge 全局扩展脚本
 // 功能：
-//   1. 按代理目标地区自动创建 url-test 类型的代理组
+//   1. 复用已有地区代理组，缺少时按代理目标地区创建 url-test 组
 //   2. 按服务（PayPal/OpenAI/TikTok等）创建 select 类型代理组，并添加对应规则
-//   3. 缺少“♻️ 自动选择”时自动补建，并添加到“🚀 节点选择”候选列表
+//   3. 补建“♻️ 自动选择”，并为节点选择及引用它的代理组补齐自动选择和地区组
+//   4. 将配置中的“狮城节点”统一替换为“新加坡节点”
 //
 // 用法：将此文件路径填入 Clash Verge → Settings → Extension Script
 // 更新备用域名缓存：node extension-script.js
@@ -85,6 +86,61 @@ function arrayIncludes(arr, val) {
     return false;
 }
 
+function replaceRegionAlias(value) {
+    if (typeof value === 'string') return value.split('狮城节点').join('新加坡节点');
+    if (!value || typeof value !== 'object') return value;
+
+    var keys = Object.keys(value);
+    for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
+        var newKey = replaceRegionAlias(key);
+        var newValue = replaceRegionAlias(value[key]);
+        if (newKey !== key) delete value[key];
+        value[newKey] = newValue;
+    }
+    return value;
+}
+
+function normalizeRegionAliases(config) {
+    var proxyGroups = config['proxy-groups'];
+    var renamedNames = Object.create(null);
+    if (Array.isArray(proxyGroups)) {
+        var groupsByName = buildProxyGroupMap(proxyGroups);
+        var removedNames = Object.create(null);
+        for (var i = 0; i < proxyGroups.length; i++) {
+            var name = proxyGroups[i].name;
+            var normalizedName = replaceRegionAlias(name);
+            if (name !== normalizedName) renamedNames[normalizedName] = true;
+            if (name !== normalizedName && groupsByName[normalizedName]) {
+                // 同名冲突通常保留新加坡组；若它依赖狮城组，则保留底层狮城组。
+                var removedName = canReachProxyGroup(groupsByName, normalizedName, name) ? normalizedName : name;
+                removedNames[groupsByName[removedName].name] = true;
+                var retainedGroup = groupsByName[removedName === name ? normalizedName : name];
+                // 两个名称同时指向保留组，让后续合并依据更新后的依赖关系判断。
+                groupsByName[name] = retainedGroup;
+                groupsByName[normalizedName] = retainedGroup;
+            }
+        }
+        for (var i = proxyGroups.length - 1; i >= 0; i--) {
+            if (removedNames[proxyGroups[i].name]) {
+                proxyGroups.splice(i, 1);
+            }
+        }
+    }
+    replaceRegionAlias(config);
+    // 新旧名称可能同时出现在候选项中，改名合并后只保留一份引用。
+    if (Array.isArray(proxyGroups)) {
+        for (var i = 0; i < proxyGroups.length; i++) {
+            var choices = proxyGroups[i].proxies;
+            if (!Array.isArray(choices)) continue;
+            for (var j = choices.length - 1; j >= 0; j--) {
+                if (renamedNames[choices[j]] && choices.indexOf(choices[j]) !== j) choices.splice(j, 1);
+            }
+        }
+    }
+    return config;
+}
+
 // 统一 SITE_CONFIG 条目为 {url, name, icon} 格式
 // 支持传入 URL 字符串或 {url, name?, icon?} 对象
 function normalizeSiteConfig(site) {
@@ -158,6 +214,14 @@ function buildExistingGroupNameMap(proxyGroups) {
     return existingNames;
 }
 
+function buildProxyGroupMap(proxyGroups) {
+    var groupsByName = Object.create(null);
+    for (var i = 0; i < proxyGroups.length; i++) {
+        groupsByName[proxyGroups[i].name] = proxyGroups[i];
+    }
+    return groupsByName;
+}
+
 function buildExistingRuleMap(rules) {
     var existingRules = {};
     for (var i = 0; i < rules.length; i++) {
@@ -225,21 +289,33 @@ function moveAutoSelectAfterNodeSelect(proxyGroups) {
     proxyGroups.splice(nodeIdx + 1, 0, autoGroup);
 }
 
+function findRegionProxyGroupName(proxyGroups, region) {
+    for (var i = 0; i < proxyGroups.length; i++) {
+        var name = proxyGroups[i].name;
+        if (typeof name !== 'string') continue;
+        // 忽略名称前的图标和空白；返回原名，保留订阅中的引用方式。
+        var label = name.replace(/^[^A-Za-z0-9\u3400-\u9fff]*/, '').replace(/\s/g, '');
+        if (label === region + '节点') return name;
+    }
+    return '';
+}
+
 function ensureRegionProxyGroups(proxyGroups, existingNames, regionGroups) {
     var regionGroupNames = [];
 
     for (var i = 0; i < KNOWN_REGIONS.length; i++) {
         var region = KNOWN_REGIONS[i];
+        var existingGroupName = findRegionProxyGroupName(proxyGroups, region);
+        if (existingGroupName) {
+            regionGroupNames.push(existingGroupName);
+            continue;
+        }
+
         var proxyNames = regionGroups[region];
         if (!proxyNames || proxyNames.length === 0) continue;
 
         var info = REGION_INFO[region];
         var groupName = info.flag + ' ' + region + '节点';
-
-        if (existingNames[groupName]) {
-            regionGroupNames.push(groupName);
-            continue;
-        }
 
         proxyGroups.push({
             name: groupName,
@@ -256,12 +332,14 @@ function ensureRegionProxyGroups(proxyGroups, existingNames, regionGroups) {
     return regionGroupNames;
 }
 
-function buildUpstreamGroupNames(regionGroupNames) {
-    var upstreamGroupNames = ['🚀 节点选择', '♻️ 自动选择'];
+function buildUpstreamGroupNames(regionGroupNames, existingNames) {
+    var upstreamGroupNames = [];
+    if (existingNames['🚀 节点选择']) upstreamGroupNames.push('🚀 节点选择');
+    if (existingNames['♻️ 自动选择']) upstreamGroupNames.push('♻️ 自动选择');
     for (var i = 0; i < regionGroupNames.length; i++) {
         upstreamGroupNames.push(regionGroupNames[i]);
     }
-    upstreamGroupNames.push('🎯 全球直连');
+    upstreamGroupNames.push(existingNames['🎯 全球直连'] ? '🎯 全球直连' : 'DIRECT');
 
     return upstreamGroupNames;
 }
@@ -311,35 +389,59 @@ function ensureServiceRuleProviders(config, proxyGroups, rules, existingNames, e
     config['rule-providers'] = ruleProviders;
 }
 
-function injectRegionGroupsIntoNodeSelect(proxyGroups, regionGroupNames, existingNames) {
-    // 注意：不注入服务组（PayPal等），否则会产生循环依赖
-    // 服务组 ↘ 节点选择 ↘ 服务组 = 环
-    var nodeSelect = null;
-    for (var i = 0; i < proxyGroups.length; i++) {
-        if (proxyGroups[i].name === '🚀 节点选择') {
-            nodeSelect = proxyGroups[i];
-            break;
+function canReachProxyGroup(groupsByName, fromName, targetName) {
+    var pending = [fromName];
+    var visited = Object.create(null);
+    while (pending.length > 0) {
+        var name = pending.pop();
+        if (name === targetName) return true;
+        if (visited[name]) continue;
+        visited[name] = true;
+        var group = groupsByName[name];
+        if (!group || !Array.isArray(group.proxies)) continue;
+        for (var i = 0; i < group.proxies.length; i++) {
+            if (groupsByName[group.proxies[i]]) pending.push(group.proxies[i]);
         }
     }
+    return false;
+}
 
-    if (nodeSelect && nodeSelect.proxies) {
-        if (existingNames['♻️ 自动选择'] && !arrayIncludes(nodeSelect.proxies, '♻️ 自动选择')) {
-            nodeSelect.proxies.unshift('♻️ 自动选择');
-        }
+function injectAggregateGroups(proxyGroups, regionGroupNames, existingNames) {
+    var nodeName = '🚀 节点选择';
+    var autoName = '♻️ 自动选择';
+    var groupsByName = buildProxyGroupMap(proxyGroups);
 
-        var autoIdx = -1;
-        for (var i = 0; i < nodeSelect.proxies.length; i++) {
-            if (nodeSelect.proxies[i] === '♻️ 自动选择') {
-                autoIdx = i;
-                break;
+    for (var gi = 0; gi < proxyGroups.length; gi++) {
+        var group = proxyGroups[gi];
+        var choices = group.proxies;
+        if (!Array.isArray(choices)) continue;
+        // 已有地区组和自动选择组保留原配置；服务组不作为注入候选。
+        if (group.name === autoName || arrayIncludes(regionGroupNames, group.name)) continue;
+
+        var nodeIdx = choices.indexOf(nodeName);
+        if (group.name !== nodeName && nodeIdx < 0) continue;
+        var insertIdx = group.name === nodeName ? 0 : nodeIdx + 1;
+
+        if (existingNames[autoName]) {
+            var autoIdx = choices.indexOf(autoName);
+            if (autoIdx >= 0) {
+                choices.splice(autoIdx, 1);
+                if (autoIdx < insertIdx) insertIdx--;
+                choices.splice(insertIdx, 0, autoName);
+                insertIdx++;
+            } else if (!canReachProxyGroup(groupsByName, autoName, group.name)) {
+                choices.splice(insertIdx, 0, autoName);
+                insertIdx++;
             }
         }
-        var insertIdx = autoIdx >= 0 ? autoIdx + 1 : 0;
 
         for (var i = 0; i < regionGroupNames.length; i++) {
-            var gn = regionGroupNames[i];
-            if (!arrayIncludes(nodeSelect.proxies, gn)) {
-                nodeSelect.proxies.splice(insertIdx, 0, gn);
+            var regionName = regionGroupNames[i];
+            var regionIdx = choices.indexOf(regionName);
+            if (regionIdx >= 0) {
+                insertIdx = Math.max(insertIdx, regionIdx + 1);
+            } else if (!canReachProxyGroup(groupsByName, regionName, group.name)) {
+                choices.splice(insertIdx, 0, regionName);
                 insertIdx++;
             }
         }
@@ -349,12 +451,13 @@ function injectRegionGroupsIntoNodeSelect(proxyGroups, regionGroupNames, existin
 // ==================== 主函数 ====================
 
 function main(config, profileName) {
-    var proxies = config.proxies;
-    if (!proxies || !Array.isArray(proxies) || proxies.length === 0) {
+    normalizeRegionAliases(config);
+    var proxies = Array.isArray(config.proxies) ? config.proxies : [];
+    var proxyGroups = config['proxy-groups'] || [];
+    if (proxies.length === 0 && proxyGroups.length === 0) {
         return config;
     }
 
-    var proxyGroups = config['proxy-groups'] || [];
     var rules = config.rules || [];
     var existingNames = buildExistingGroupNameMap(proxyGroups);
     var existingRules = buildExistingRuleMap(rules);
@@ -363,10 +466,10 @@ function main(config, profileName) {
     moveAutoSelectAfterNodeSelect(proxyGroups);
     var regionGroups = buildRegionGroups(proxies);
     var regionGroupNames = ensureRegionProxyGroups(proxyGroups, existingNames, regionGroups);
-    var upstreamGroupNames = buildUpstreamGroupNames(regionGroupNames);
+    var upstreamGroupNames = buildUpstreamGroupNames(regionGroupNames, existingNames);
 
     ensureServiceRuleProviders(config, proxyGroups, rules, existingNames, existingRules, upstreamGroupNames);
-    injectRegionGroupsIntoNodeSelect(proxyGroups, regionGroupNames, existingNames);
+    injectAggregateGroups(proxyGroups, regionGroupNames, existingNames);
 
     config['proxy-groups'] = proxyGroups;
     config.rules = rules;
